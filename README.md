@@ -1,9 +1,11 @@
 # Naive Bayes Spam Filter
 
-A spam classifier built from scratch with numpy and pandas, without scikit-learn or any other ML library. It is trained on the Enron-Spam corpus (about 30,500 labelled emails after cleaning) and reaches 98.52% accuracy and 99.01% precision on a held-out test set. The whole project is a single notebook, [`spam_filter.ipynb`](spam_filter.ipynb), with outputs saved so the results can be read without running anything.
+A spam classifier built from scratch with numpy and pandas, without scikit-learn or any other ML library.
+It is trained on the Enron-Spam corpus (about 30,500 labelled emails after cleaning) and 
+reaches 98.52% accuracy and 99.01% precision on a held-out test set.
 
 **Contents**
-[Results](#results) · [Dataset](#dataset) · [Pipeline](#pipeline) · [Design choices and hyperparameters](#design-choices-and-hyperparameters) · [Evaluation](#evaluation) · [Reproducing the results](#reproducing-the-results) · [Repository layout](#repository-layout) · [Limitations and next steps](#limitations-and-next-steps) · [Data credits](#data-credits)
+[Results](#results) · [Dataset](#dataset) · [Pipeline](#pipeline) · [Design choices](#design-choices) · [Evaluation](#evaluation) · [Reproducing the results](#reproducing-the-results) · [Repository layout](#repository-layout)  · [Data credits](#data-credits)
 
 ## Results
 
@@ -43,7 +45,7 @@ The single-file CSV version used here has these properties:
 | Usable rows after deduplication | 30,494 (15,910 ham, 14,584 spam; 52.2% / 47.8%) |
 | Text length (subject + body) | mean 1,505 characters, median 711, 99th percentile 9,895, maximum 228,368 |
 
-The CSV is downloaded when the notebook first runs and is not stored in this repository. One copy of the file found on Kaggle turned out to be corrupted: every spam row carried the text of a ham email, which left only six distinct spam subjects in 17,171 rows. The loading cell checks for this (see step 1 below) and stops with an error rather than training on it.
+The CSV is downloaded when the notebook first runs and is not stored in this repository.
 
 ## Pipeline
 
@@ -53,7 +55,7 @@ Everything below is implemented in `spam_filter.ipynb`, in this order.
 
 The subject and body are joined into one string (`Subject + " " + Message`), with empty values replaced by empty strings. The label becomes 1 for `spam` and 0 for `ham`.
 
-Before anything else, the loader counts distinct spam texts. If fewer than half of the spam rows are unique, it raises a `ValueError`. A healthy copy has about 85% unique spam texts, and the corrupted copy mentioned above has almost none.
+Before anything else, the loader counts distinct spam texts. If fewer than half of the spam rows are unique, it raises a `ValueError`. A healthy copy has about 85% unique spam texts.
 
 ### 2. Deduplication, shuffling and splitting
 
@@ -68,7 +70,7 @@ Only exact duplicates are removed. Near-duplicates, such as spam campaigns that 
 3. Drop tokens shorter than two characters.
 4. Drop English stopwords from NLTK's list (198 words in the NLTK data version used for development).
 
-There is no stemming, lemmatisation or n-gram extraction. Numbers are kept as tokens; in early tests on a smaller dataset, dropping them did not help. The training vocabulary has 140,197 distinct tokens.
+There is no stemming, lemmatisation or n-gram extraction. Numbers are kept as tokens. The training vocabulary has 140,197 distinct tokens.
 
 ### 4. Model
 
@@ -99,8 +101,6 @@ Scores are summed in log space because a product of a few hundred per-word proba
 
 Training is a single pass over the training emails. For each email the set of its tokens is counted into a spam table or a ham table, and the log-odds of every word are computed once, in vectorised pandas operations, and stored in a dictionary. There is no optimisation loop, learning rate or epoch count. The result is exact and deterministic.
 
-The cost is linear in the total number of tokens. On a CPU the notebook runs from the download to the final prediction in under ten seconds in the development environment.
-
 ### 6. Inference
 
 An email is tokenised the same way as the training data. Its score is the prior plus the sum of the stored log-odds of its tokens, and any token the model has never seen is ignored (it adds 0). The decision threshold is a score of 0.
@@ -109,24 +109,21 @@ An email is tokenised the same way as the training data. Its score is the prior 
 
 The model is exposed as a small class with `fit`, `score`, `predict` and `predict_proba` methods.
 
-## Design choices and hyperparameters
+## Design choices
 
-The model has no hyperparameters that were searched or tuned on this dataset. All values below were fixed in advance, and no setting was changed after looking at the test results.
+All values below were fixed in advance, and no setting was changed after looking at the test results.
 
 | Setting | Value | Reasoning |
 |---|---|---|
 | Train / test split | 80 / 20, sequential after a shuffle | Standard, and the test set is large (6,099 emails) |
 | Random seed | 42 | Makes the shuffle, and so every number here, reproducible |
 | Smoothing | add-one, $(n+1)/(N+2)$ | Keeps every word probability away from 0 and 1 |
-| Unseen words | ignored | See below |
 | Token pattern | `[a-z0-9]+` | Simple, fast, and needs no tokenizer data download |
 | Minimum token length | 2 characters | Drops single letters and stray digits |
 | Stopwords | NLTK English list | Removes high-frequency words that carry little signal |
-| Class prior | empirical, from the training split | The classes are nearly balanced, so it barely matters |
 | Decision threshold | score > 0 (probability > 0.5) | The Bayes decision rule when both error types cost the same |
 | Chart filter | words in at least 100 emails, top 15 | Display only; it does not affect the model |
 
-Ignoring unseen words was decided during early experiments on a smaller 5,728-email dataset. There, giving them a smoothed probability roughly doubled false positives under 5-fold cross-validation (22 versus 47). The reason is that when one class is larger, an unseen word's smoothed probability is lower under that class, so each unseen word nudges the score toward the smaller one. Enron-Spam is nearly balanced, so the effect would be small here, and the comparison was not repeated on it.
 
 ## Evaluation
 
@@ -136,8 +133,6 @@ Ignoring unseen words was decided during early experiments on a smaller 5,728-em
 
 **Reading the results.** The model is slightly more cautious than aggressive. It flags a good email as spam 0.92% of the time and misses 2.06% of spam. Moving the threshold above 0 would lower the false-positive rate further at the cost of recall, and the right trade-off depends on how bad a lost email is for the user. The threshold was not tuned.
 
-**Uncertainty.** On 6,099 test emails the 95% Wilson interval for accuracy is roughly 98.2% to 98.8%. A single split cannot show how much the numbers move with a different split.
-
 **Most informative words.** Ranking words that appear in at least 100 emails by log-odds gives a clear picture of what the model learned:
 
 - Strongest spam signals: `viagra`, `cialis`, `pills`, `pharmacy`, `xanax`, `meds`, `photoshop`, `php`, `serial`, and deliberate misspellings such as `wiil`, `piease` and `shouid`, plus a few tokens that look like address fragments from the corpus.
@@ -145,7 +140,6 @@ Ignoring unseen words was decided during early experiments on a smaller 5,728-em
 
 The spam side is what one would expect. The ham side is not general knowledge about legitimate mail. It is the vocabulary and the people of one company.
 
-**Error analysis.** During development, ten of the 90 misclassified test emails were inspected, and all ten were missed spam. Several have almost no spam vocabulary: a near-empty message, a short personal-sounding lure, a delivery-failure notice, and text with letters replaced by question marks to defeat word matching. The first two are inherent to a bag-of-words model. The others would need character-level features or header information. Only that sample was inspected, and the false positives were not.
 
 **Caveats that make the numbers optimistic.**
 
@@ -179,18 +173,6 @@ The pipeline is deterministic. The same confusion matrix came out in two indepen
 └── README.md
 ```
 
-## Limitations and next steps
-
-Known limitations are covered above: the independence assumption, the single-company ham, the uncalibrated probabilities, the random split and the date range of the corpus.
-
-Reasonable next steps, roughly in order of value:
-
-1. Evaluate with a time-based split and with near-duplicate removal, to get a number closer to real deployment.
-2. Add k-fold cross-validation and a held-out validation set, then tune the decision threshold on that set for a chosen false-positive budget.
-3. Compare against a strict multinomial or Bernoulli Naive Bayes, and against the same pipeline with TF-IDF weights, to measure what the hybrid scoring costs or gains.
-4. Add bigrams and character n-grams to handle obfuscated spelling.
-5. Use message headers, which the current features ignore.
-6. Calibrate the output probabilities, for example with Platt scaling.
 
 ## Data credits
 
@@ -198,4 +180,4 @@ The Enron-Spam dataset was collected by V. Metsis, I. Androutsopoulos and G. Pal
 
 > V. Metsis, I. Androutsopoulos and G. Paliouras. *Spam Filtering with Naive Bayes - Which Naive Bayes?* Third Conference on Email and Anti-Spam (CEAS), 2006.
 
-The single-file CSV used here is distributed by [MWiechmann/enron_spam_data](https://github.com/MWiechmann/enron_spam_data) and is downloaded at runtime from that repository. It is not stored or redistributed here. See that repository and the original authors' page for the terms that apply to the data.
+The single-file CSV used here is distributed by [MWiechmann/enron_spam_data](https://github.com/MWiechmann/enron_spam_data) and is downloaded at runtime from that repository. It is not stored or redistributed here.
